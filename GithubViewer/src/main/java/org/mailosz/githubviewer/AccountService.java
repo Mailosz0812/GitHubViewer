@@ -2,7 +2,6 @@ package org.mailosz.githubviewer;
 
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -16,8 +15,8 @@ public class AccountService {
 
     public List<Repository> getRepositories(String username){
         Repository[] repos = githubClient.getRepositories(username);
-        List<Repository> resultRepos = new ArrayList<>();
-        resultRepos = Arrays.stream(repos).filter(repository -> !repository.isFork())
+
+        return Arrays.stream(repos).filter(repository -> !repository.isFork())
                 .map(repository -> {
                     Branch[] branches = githubClient.getRepoBranches(repository.repoName(),username);
                     return new Repository(
@@ -25,8 +24,6 @@ public class AccountService {
                             false, branches
                     );
                 }).toList();
-
-        return resultRepos;
     }
 }
 

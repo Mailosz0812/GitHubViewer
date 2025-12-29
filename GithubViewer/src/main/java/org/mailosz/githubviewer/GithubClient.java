@@ -52,6 +52,10 @@ public class GithubClient {
         return branches;
     }
 
+/*
+    Method tries to fetch error message from GitHub API response
+    If message field is empty, falls back to default HTTP status text
+ */
     private String getMessage(ClientHttpResponse response) throws IOException {
         Map<String,Object> errMap = mapper.readValue(response.getBody(),Map.class);
         String message = (String) errMap.getOrDefault("message", response.getStatusText());

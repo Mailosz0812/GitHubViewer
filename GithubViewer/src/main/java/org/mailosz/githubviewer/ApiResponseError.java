@@ -1,3 +1,3 @@
 package org.mailosz.githubviewer;
 
-public record ApiResponseError(int statusCode,String message) {}
+public record ApiResponseError(int status,String message) {}
