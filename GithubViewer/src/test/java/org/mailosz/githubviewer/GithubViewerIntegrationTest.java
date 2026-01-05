@@ -1,27 +1,48 @@
 package org.mailosz.githubviewer;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.io.Resource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.servlet.client.RestTestClient;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.io.IOException;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureWebTestClient
-@WireMockTest(httpPort = 8081)
 public class GithubViewerIntegrationTest {
 
-    @Autowired
-    private WebTestClient webTestClient;
+    RestTestClient client;
+    static WireMockServer wireMockServer;
+
+    @BeforeAll
+    static void startWireMock() {
+        wireMockServer = new WireMockServer(wireMockConfig().dynamicPort());
+        wireMockServer.start();
+    }
+
+    @AfterAll
+    static void stopWireMock(){
+        if(wireMockServer != null) {
+            wireMockServer.stop();
+        }
+    }
+
+    @BeforeEach
+    void setUp(WebApplicationContext context) {
+        client = RestTestClient.bindToApplicationContext(context).build();
+    }
 
     @Value("classpath:proxyResponses/happy-ending-response.json")
     private Resource happyEndingJson;
@@ -30,21 +51,22 @@ public class GithubViewerIntegrationTest {
     private Resource notFoundJson;
 
     @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry){
-        registry.add("github.api.default-url", () -> "http://localhost:"+ 8081);
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("github.api.default-url", () -> wireMockServer.baseUrl());
     }
 
     @Test
     void shouldReturnOnlyNotForkedRepositories() throws IOException {
+        String testName = "Mailosz0812";
 //        Stubbing for repos (one repo with fork)
-        stubFor(get(urlEqualTo("/users/Mailosz0812/repos"))
+        wireMockServer.stubFor(get(urlEqualTo("/users/" + testName + "/repos"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
                         .withBodyFile("github-repo-response.json")));
 
 //        Stubbing for branches (branches only for non-fork repo)
-        stubFor(get(urlEqualTo("/repos/Mailosz0812/DietPlanner/branches"))
+        wireMockServer.stubFor(get(urlEqualTo("/repos/" + testName + "/DietPlanner/branches"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
@@ -53,18 +75,36 @@ public class GithubViewerIntegrationTest {
         String expectedBody = new String(happyEndingJson.getInputStream().readAllBytes());
 
 //        Final request to API
-        webTestClient.get()
-                .uri("/user/Mailosz0812")
+        client.get()
+                .uri("/user/" + testName)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
                 .json(expectedBody);
+
+    }
+    @Test
+    void shouldReturnEmptyListWhenUserHasNoRepositories(){
+        String emptyUser = "emptyName";
+//        Stubbing for empty list
+        wireMockServer.stubFor(get(urlEqualTo("/users/" + emptyUser + "/repos"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type","application/json")
+                        .withBody("[]")));
+        client.get()
+                .uri("/user/" + emptyUser)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .json("[]");
     }
 
     @Test
-    void shouldReturnNotFoundWhenUserDoesNotExists() throws IOException{
+    void shouldReturnNotFoundWhenUserDoesNotExists() throws IOException {
 //        Stubbing for non-existent user
-        stubFor(get(urlEqualTo("/users/nonExistUser/repos"))
+        String nonExistUser = "nonExistUser";
+        wireMockServer.stubFor(get(urlEqualTo("/users/" + nonExistUser + "/repos"))
                 .willReturn(aResponse()
                         .withStatus(404)
                         .withHeader("Content-Type", "application/json")
@@ -73,10 +113,10 @@ public class GithubViewerIntegrationTest {
         String expectedBody = new String(notFoundJson.getInputStream().readAllBytes());
 
 //        Final request to API
-        webTestClient.get()
-                .uri("/user/nonExistUser")
+        client.get()
+                .uri("/user/"+nonExistUser)
                 .exchange()
-                .expectStatus().isEqualTo(404)
+                .expectStatus().isNotFound()
                 .expectBody()
                 .json(expectedBody);
     }
